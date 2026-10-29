@@ -1,0 +1,29 @@
+[
+  {
+    "scenario_id": "SCENARIO-001",
+    "title": "Корректная реализация минимальной длины пароля",
+    "req_id": "FR-001",
+    "target_repo": "sample/demo-app",
+    "target_ref": "PR#101",
+    "expected_status": "IMPLEMENTED",
+    "expected_evidence_contains": "password_length < 8"
+  },
+  {
+    "scenario_id": "SCENARIO-002",
+    "title": "Прямое нарушение таймаута соединения",
+    "req_id": "NFR-002",
+    "target_repo": "sample/demo-app",
+    "target_ref": "PR#102",
+    "expected_status": "VIOLATED",
+    "expected_evidence_contains": "TIMEOUT_SECONDS = 0"
+  },
+  {
+    "scenario_id": "SCENARIO-007",
+    "title": "Проверка первого родителя merge-коммита",
+    "req_id": "TEST-002",
+    "target_repo": "sample/demo-app",
+    "target_ref": "merge_commit_sha123",
+    "expected_status": "IMPLEMENTED",
+    "expected_parent_checked": true
+  }
+]
