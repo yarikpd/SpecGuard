@@ -1,5 +1,6 @@
 """GitHub MCP Client and Git Adapters (Module 3)."""
 
+import re
 from typing import List, Optional
 from abc import ABC, abstractmethod
 from specguard.models.schema import GitContext, FileChange
@@ -17,6 +18,28 @@ class BaseGitClient(ABC):
     def get_commit_context(self, repo: str, commit_sha: str) -> GitContext:
         """Получить контекст коммита. Для merge-коммита сравнить с первым родителем."""
         pass
+
+    def get_context(self, repo: str, ref: str) -> GitContext:
+        """Получить контекст изменений для PR или коммита.
+
+        Определяет тип ref:
+        - Если ref указывает на PR (число, 'PR#123', 'pull/123/head', 'refs/pull/123/merge'),
+          вызывает get_pr_context.
+        - Иначе считает ref хэшем коммита или веткой и вызывает get_commit_context.
+        """
+        clean_ref = str(ref).strip()
+        pr_match = re.match(
+            r"^(?:(?:refs/)?pull/|pr\s*#?|#)?(\d+)(?:/head|/merge)?$",
+            clean_ref,
+            re.IGNORECASE,
+        )
+        if pr_match and (
+            (clean_ref.isdigit() and len(clean_ref) <= 7)
+            or clean_ref.lower().startswith(("pr", "#", "pull/", "refs/pull/"))
+        ):
+            pr_num = int(pr_match.group(1))
+            return self.get_pr_context(repo, pr_num)
+        return self.get_commit_context(repo, clean_ref)
 
 
 class MockGitClient(BaseGitClient):
@@ -48,13 +71,19 @@ class MockGitClient(BaseGitClient):
 
     def get_commit_context(self, repo: str, commit_sha: str) -> GitContext:
         is_merge = commit_sha.startswith("merge_")
+        is_missing_parent = "missing_parent" in commit_sha or "no_parent" in commit_sha
+        is_no_base = "no_base" in commit_sha or "inaccessible_base" in commit_sha
+
+        base_sha = None if is_no_base else ("parent1_111" if is_merge else "parent_000")
+        first_parent = None if is_missing_parent else ("parent1_111" if is_merge else None)
+
         return GitContext(
             target_repo=repo,
             target_ref=commit_sha,
-            base_sha="parent1_111" if is_merge else "parent_000",
+            base_sha=base_sha,
             head_sha=commit_sha,
             is_merge_commit=is_merge,
-            first_parent_sha="parent1_111" if is_merge else None,
+            first_parent_sha=first_parent,
             files=self.sample_files,
             is_partial=False
         )

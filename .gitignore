@@ -107,6 +107,7 @@ dmypy.json
 .pyre/
 .pytype/
 cython_debug/
+.agents
 
 # SpecGuard runtime local data
 .specguard_history/
