@@ -1,23 +1,20 @@
-"""Pydantic models and data contracts for SpecGuard."""
-
 from enum import Enum
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 
 
 class ViolationSeverity(str, Enum):
-    CONFIRMED = "CONFIRMED"      # Подтвержденное противоречие ТЗ
-    SUSPECTED = "SUSPECTED"      # Подозрение / неоднозначность
+    CONFIRMED = "CONFIRMED"
+    SUSPECTED = "SUSPECTED"
 
 
 class RequirementStatus(str, Enum):
-    IMPLEMENTED = "IMPLEMENTED"  # Требование реализовано в изменении
-    VIOLATED = "VIOLATED"        # Обнаружено нарушение требования
-    NOT_AFFECTED = "NOT_AFFECTED"# Не затронуто данным изменением
+    IMPLEMENTED = "IMPLEMENTED"
+    VIOLATED = "VIOLATED"
+    NOT_AFFECTED = "NOT_AFFECTED"
 
 
 class SpecRequirement(BaseModel):
-    """Единичное требование, извлеченное из ТЗ."""
     req_id: str
     section: str = ""
     title: str = ""
@@ -26,10 +23,10 @@ class SpecRequirement(BaseModel):
     exceptions: List[str] = Field(default_factory=list)
     raw_text: str = ""
     source_file: str = ""
+    related_req_ids: List[str] = Field(default_factory=list)
 
 
 class Evidence(BaseModel):
-    """Фактическое доказательство вывода."""
     file_path: str
     revision: str
     line_start: Optional[int] = None
@@ -39,7 +36,6 @@ class Evidence(BaseModel):
 
 
 class Finding(BaseModel):
-    """Результат анализа конкретного требования."""
     req_id: str
     title: str
     status: RequirementStatus
@@ -51,9 +47,8 @@ class Finding(BaseModel):
 
 
 class FileChange(BaseModel):
-    """Изменение конкретного файла в PR/коммите."""
     filename: str
-    status: str  # "added", "modified", "deleted", "renamed"
+    status: str
     old_path: Optional[str] = None
     new_path: Optional[str] = None
     patch: Optional[str] = None
@@ -61,11 +56,10 @@ class FileChange(BaseModel):
 
 
 class GitContext(BaseModel):
-    """Контекст проверяемого изменения из Git/MCP."""
     target_repo: str
-    target_ref: str                   # PR # (e.g. "PR#42") or Commit SHA
-    base_sha: Optional[str] = None    # Исходная ревизия (или 1-й родитель merge-коммита)
-    head_sha: str                     # Проверяемая ревизия
+    target_ref: str
+    base_sha: Optional[str] = None
+    head_sha: str
     is_merge_commit: bool = False
     first_parent_sha: Optional[str] = None
     files: List[FileChange] = Field(default_factory=list)
@@ -74,7 +68,6 @@ class GitContext(BaseModel):
 
 
 class AuditReport(BaseModel):
-    """Итоговый отчет проверки соответствия."""
     audit_id: str
     timestamp: str
     target_repo: str
@@ -90,7 +83,6 @@ class AuditReport(BaseModel):
 
 
 class DisputeRequest(BaseModel):
-    """Запрос на пересмотр спорного замечания."""
     audit_id: str
     finding_req_id: str
     user_comment: str

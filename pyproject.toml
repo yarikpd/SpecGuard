@@ -1,5 +1,28 @@
 [project]
 name = "specguard"
 version = "0.1.0"
-requires-python = ">=3.14"
-dependencies = []
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.0",
+    "httpx>=0.25",
+    "rank-bm25>=0.2.2",
+    "pypdf>=3.0",
+    "python-docx>=1.0",
+    "numpy>=1.24",
+    "typer[all]>=0.9",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
