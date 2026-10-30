@@ -105,7 +105,7 @@ class TestLiveCheckOnSimulation:
         assert not any("merge_diff_semantics_verified" in item for item in summary["advice"])
         for result in results:  # те же ответы от живого сервера дали бы разрешение включить флаг
             result.context["source"] = "github_mcp"
-        assert any("merge_diff_semantics_verified=True" in item for item in summarize(results)["advice"])
+        assert any("merge_diff_semantics_verified=True обоснована" in item for item in summarize(results)["advice"])
 
         meta = {"started_at": "2026-10-30T10:00:00+03:00", "source": "Имитация", "clone": None,
                 "targets_file": None, "specguard_version": "0.1.0", "platform": "test"}

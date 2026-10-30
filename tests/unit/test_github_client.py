@@ -335,17 +335,17 @@ class TestCommit:
         assert ctx.is_merge_commit is True
         assert ctx.parent_shas == [sha("main-1"), sha("feature-1")]
         assert ctx.first_parent_sha == sha("main-1") == ctx.base_sha
-        assert MERGE_UNVERIFIED_NOTE in ctx.limitations
+        assert MERGE_UNVERIFIED_NOTE not in ctx.limitations  # подтверждено живой проверкой
         assert has(ctx.diagnostics, f"первого родителя {sha('main-1')}")
 
-    def test_merge_note_disappears_after_live_verification(self, github):
+    def test_unverified_mode_brings_the_note_back(self, github):
         add_history(github)
-        client, _ = make_client(github, merge_diff_semantics_verified=True)
+        client, _ = make_client(github, merge_diff_semantics_verified=False)
 
         ctx = client.get_commit_context(REPO, sha("merge"))
 
         assert ctx.is_merge_commit is True
-        assert MERGE_UNVERIFIED_NOTE not in ctx.limitations
+        assert MERGE_UNVERIFIED_NOTE in ctx.limitations
 
     def test_unsupported_parent_syntax_leaves_base_unknown(self):
         gh = FakeGitHub(supports_parent_syntax=False)
@@ -446,7 +446,6 @@ class TestCommit:
 
         assert ctx.is_merge_commit is True
         assert EMPTY_FILES_NOTE in ctx.limitations
-        assert MERGE_UNVERIFIED_NOTE in ctx.limitations
 
     @pytest.mark.parametrize("ref", ["", "  ", "HEAD~1", "abc^2", "a b", "main..dev", None])
     def test_invalid_refs_are_rejected(self, github, ref):

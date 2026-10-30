@@ -443,8 +443,8 @@ def summarize(results: Sequence[TargetResult]) -> Dict[str, Any]:
     if simulated:
         advice.append("Это имитация: она проверяет саму проверку, а не поведение GitHub (TEST-006).")
     elif summary["parent_refs_work"] and summary["merge_first_parent"]:
-        advice.append("Можно включить merge_diff_semantics_verified=True: GitHub строит список файлов "
-                      "merge-коммита от первого родителя (AC-014).")
+        advice.append("GitHub строит список файлов merge-коммита от первого родителя (AC-014): "
+                      "настройка merge_diff_semantics_verified=True обоснована.")
     if summary["parent_refs_work"] is False:
         advice.append("GitHub не понимает «<sha>^N» через get_commit: нужен другой способ получить родителей.")
     if summary["merge_first_parent"] is False:
