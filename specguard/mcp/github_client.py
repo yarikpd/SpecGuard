@@ -104,8 +104,8 @@ class GitHubMCPClient(BaseGitClient):
     def get_pr_context(self, repo: str, pr_number: int) -> GitContext:
         # TODO (Участник 3): Вызов инструмента pull_request_read через MCP
         # В случае недоступности MCP можно сфоллбэчиться на Mock
-        return MockGitClient().get_pr_context(repo, pr_number)
+        raise NotImplementedError("GitHub MCP integration is not implemented; no live data was retrieved")
 
     def get_commit_context(self, repo: str, commit_sha: str) -> GitContext:
         # TODO (Участник 3): Вызов get_commit, получение 1-го родителя для merge-коммита
-        return MockGitClient().get_commit_context(repo, commit_sha)
+        raise NotImplementedError("GitHub MCP integration is not implemented; no live data was retrieved")

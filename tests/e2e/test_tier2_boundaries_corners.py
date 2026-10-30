@@ -423,8 +423,9 @@ class TestFeature6MergeCommitBoundaries:
             target_ref="merge_nobase",
             git_context=ctx,
         )
-        assert report.base_parent_sha == "parent_first_valid"
-        assert report.is_partial is False  # base_parent_sha is available, not partial
+        assert report.base_parent_sha is None
+        assert report.is_partial is True
+        assert "base_revision" in report.missing_data
 
     def test_merge_ref_missing_parent_in_mock_client(self, sample_orchestrator):
         """6.3 Verify MockGitClient with ref containing 'missing_parent' produces None first_parent."""
@@ -435,7 +436,7 @@ class TestFeature6MergeCommitBoundaries:
         assert report.metadata["is_merge_commit"] is True
         assert report.metadata["first_parent_sha"] is None
         # base_parent_sha fell back to base_sha parent1_111
-        assert report.base_parent_sha == "parent1_111"
+        assert report.base_parent_sha is None
 
     def test_merge_commit_uppercase_hex_sha(
         self, sample_orchestrator, make_git_context
@@ -453,7 +454,7 @@ class TestFeature6MergeCommitBoundaries:
             git_context=ctx,
         )
         assert report.metadata["head_sha"] == upper_sha
-        assert report.base_parent_sha == "PARENT_" + upper_sha
+        assert report.base_parent_sha is None
 
     def test_non_merge_with_accidental_first_parent_sha(
         self, sample_orchestrator, make_git_context
@@ -496,7 +497,7 @@ class TestFeature7PartialDataBoundaries:
             target_ref="PR#boundary_exact",
             git_context=ctx,
         )
-        assert report.is_partial is False
+        assert "diff_character_overflow" not in report.missing_data
 
     def test_diff_threshold_plus_one_triggers_partial(
         self, sample_spec_index, sample_llm_client, make_git_context, make_file_change
@@ -702,7 +703,7 @@ class TestFeature9InaccessibleBaseBoundaries:
 
         assert report.is_partial is True
         assert len(report.findings) > 0
-        assert report.findings[0].status == RequirementStatus.IMPLEMENTED
+        assert report.findings[0].status == RequirementStatus.INSUFFICIENT_DATA
         assert report.findings[0].severity is None
 
     def test_inaccessible_base_preserves_not_affected_status(

@@ -19,6 +19,8 @@ Empirical Challenger 1 harness validating:
 
 from __future__ import annotations
 
+from tests.report_fixtures import make_saved_report
+
 import time
 import pytest
 
@@ -110,7 +112,7 @@ def sample_violated_report() -> AuditReport:
         counter_evidence=[],
         limitations=[],
     )
-    return AuditReport(
+    return make_saved_report(
         audit_id="audit_stress_001",
         timestamp="2026-10-29T12:00:00Z",
         target_repo="acme/stress-repo",

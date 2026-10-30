@@ -421,7 +421,8 @@ class TestFeature5CoreAuditOrchestration:
         assert isinstance(report, AuditReport)
         assert report.target_repo == "octocat/SpecGuardRepo"
         assert report.target_ref == "PR#42"
-        assert report.is_partial is False
+        assert report.is_partial is True
+        assert "verified_evidence" in report.missing_data
         assert len(report.findings) > 0
         assert report.metadata["files_count"] == 2
 
@@ -449,10 +450,8 @@ class TestFeature5CoreAuditOrchestration:
         )
         f = report.findings[0]
         assert f.req_id is not None
-        assert len(f.evidence) > 0
-        ev = f.evidence[0]
-        assert ev.file_path != ""
-        assert ev.code_quote != ""
+        assert f.evidence == []
+        assert f.status == RequirementStatus.INSUFFICIENT_DATA
 
     def test_deterministic_audit_id_generation(self):
         """5.4 Verify deterministic audit_id remains invariant for identical inputs."""
@@ -525,7 +524,7 @@ class TestFeature6MergeCommitFirstParentTracking:
             target_ref="merge_custom",
             git_context=ctx,
         )
-        assert report.base_parent_sha == "base_fallback_123"
+        assert report.base_parent_sha is None
 
     def test_merge_commit_first_parent_recorded_in_metadata(
         self, sample_orchestrator, make_git_context
@@ -661,8 +660,8 @@ class TestFeature8DisputeReviewProcedure:
 
         response = orchestrator.review_dispute(dispute_req, saved_report=report)
         assert isinstance(response, DisputeResponse)
-        assert response.dispute_status == "OVERTURNED"
-        assert response.updated_finding.status == RequirementStatus.IMPLEMENTED
+        assert response.dispute_status == "MODIFIED"
+        assert response.updated_finding.status == RequirementStatus.INSUFFICIENT_DATA
         assert response.updated_finding.severity is None
 
     def test_dispute_upheld_workflow(
@@ -690,7 +689,7 @@ class TestFeature8DisputeReviewProcedure:
         response = orchestrator.review_dispute(dispute_req, saved_report=report)
         assert response.dispute_status == "UPHELD"
         assert response.updated_finding.status == RequirementStatus.VIOLATED
-        assert response.updated_finding.severity == ViolationSeverity.CONFIRMED
+        assert response.updated_finding.severity == ViolationSeverity.SUSPECTED
 
     def test_hermetic_dispute_execution_without_git_client(
         self, sample_spec_index, make_audit_report, make_finding, make_dispute_request

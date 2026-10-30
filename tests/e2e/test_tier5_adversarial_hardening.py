@@ -515,8 +515,8 @@ class TestTier5MixedLanguageAndDisputeHardening:
             saved_report=saved_report,
             language="en",
         )
-        assert response.dispute_status == "OVERTURNED"
-        assert response.updated_finding.status == RequirementStatus.IMPLEMENTED
+        assert response.dispute_status == "MODIFIED"
+        assert response.updated_finding.status == RequirementStatus.INSUFFICIENT_DATA
 
     def test_mixed_language_english_audit_russian_dispute(
         self,
@@ -893,7 +893,7 @@ class TestTier5InaccessibleBaseLineageDowngradeEdgeCases:
 
         # Finding 2 (FR-002) was IMPLEMENTED -> remains IMPLEMENTED, severity is None
         f2 = next(f for f in report.findings if f.req_id == "FR-002")
-        assert f2.status == RequirementStatus.IMPLEMENTED
+        assert f2.status == RequirementStatus.INSUFFICIENT_DATA
         assert f2.severity is None
 
         # Finding 3 (FR-003) was NOT_AFFECTED -> remains NOT_AFFECTED, severity is None
@@ -1255,7 +1255,7 @@ class TestTier5AdversarialBreakoutAndLineageInvariants:
         )
 
         # Verify lineage invariants
-        assert merge_report.base_parent_sha == first_parent
+        assert merge_report.base_parent_sha is None
         assert non_merge_report.base_parent_sha == base_parent
         assert merge_report.audit_id != non_merge_report.audit_id
 
