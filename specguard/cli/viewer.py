@@ -1,4 +1,5 @@
 """Scrollable report viewer that does not depend on terminal scrollback."""
+import re
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import VerticalScroll
@@ -33,6 +34,10 @@ class ReportViewer(App):
 
     def on_mount(self):
         self.query_one("#report").focus()
+
+    def action_open_pr(self, url: str):
+        if re.fullmatch(r"https://github\.com/[A-Za-z0-9-]+/[A-Za-z0-9._-]+/pull/[1-9][0-9]*", url):
+            self.open_url(url)
 
     def action_close(self):
         self.exit()

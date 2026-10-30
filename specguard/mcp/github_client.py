@@ -265,6 +265,8 @@ class GitHubMCPClient(BaseGitClient):
             GitHubContext(
                 target_repo=f"{owner}/{name}",
                 target_ref=f"PR#{pr_number}",
+                pr_number=pr_number,
+                pr_title=pr.get("title") if isinstance(pr.get("title"), str) else None,
                 base_sha=base_sha,
                 head_sha=head_sha,
                 files=files,

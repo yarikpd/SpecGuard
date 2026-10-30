@@ -1,4 +1,7 @@
 """Complete reports as literal Rich text, safe for untrusted source quotes."""
+import re
+from rich.style import Style
+from specguard.mcp.github_client import parse_repo
 from rich.console import Group
 from rich.panel import Panel
 from rich.table import Table
@@ -17,11 +20,41 @@ def render_report(report):
         f"{tr('Пояснение', 'Summary')}: {report.user_summary}",
         f"{tr('Снимок ТЗ', 'Specification snapshot')}: {report.spec_snapshot_id or '—'}",
     ])
-    parts = [Panel(Text(header), title="SpecGuard", border_style="#725d65")]
+    header_text = Text(header)
+    number = context.pr_number if context else None
+    if number is None:
+        ref = context.target_ref if context else report.target_ref
+        match = re.fullmatch(r"(?:(?:refs/)?pull/|pr\s*#?|#)?(\d+)(?:/head|/merge)?", ref.strip(), re.I)
+        if match and (not ref.isdigit() or len(ref) <= 7):
+            number = int(match.group(1))
+    if number:
+        owner, repo = parse_repo(report.target_repo)
+        url = f"https://github.com/{owner}/{repo}/pull/{number}"
+        title = context.pr_title if context else None
+        label = f"PR #{number}" + (f" · {title}" if title else "")
+        link = Text(label, style=Style(color="#c6afb6", underline=True, link=url,
+                                      meta={"@click": f"app.open_pr('{url}')"}))
+        header_text = Text.assemble(link, "\n", header_text)
+    parts = [Panel(header_text, title="SpecGuard", border_style="#725d65")]
     snapshots = report.metadata.get("spec_snapshots", [])
     if snapshots:
         parts.append(Panel(Text("\n".join(f"{item['path']} · {item['snapshot_id']}" for item in snapshots)),
                            title=tr("Документы ТЗ", "Specification documents")))
+    scope_lines = [tr(
+        "Наблюдения для ручной оценки. Отсутствие найденной связи с ТЗ само по себе не является нарушением. При неполном извлечении ТЗ вывод ограничен доступным текстом.",
+        "Observations for human review. No identified specification link is not itself a violation. Incomplete extraction limits this review to available text.")]
+    for observation in report.scope_observations:
+        scope_lines.extend(["", observation.title, observation.description])
+        for ev in observation.evidence:
+            scope_lines.extend([f"{ev.file_path}:{ev.line_start}–{ev.line_end} @ {ev.revision}", ev.code_quote])
+    if not report.scope_observations:
+        if report.metadata.get("scope_review") == "completed":
+            scope_lines.append(tr("Такие изменения не выявлены при этом анализе.", "No such changes were identified in this analysis."))
+        else:
+            scope_lines.append(tr("Отдельная проверка не выполнена или не завершена.", "The separate review was not run or did not complete."))
+    parts.append(Panel(Text('\n'.join(scope_lines)),
+                       title=tr("Изменения без найденной связи с ТЗ", "Changes without an identified specification link"),
+                       border_style="#c6afb6"))
     table = Table(expand=True)
     for column in ["ID", tr("Требование", "Requirement"), tr("Статус", "Status"), tr("Уверенность", "Confidence")]:
         table.add_column(column)

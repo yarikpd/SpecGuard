@@ -79,12 +79,15 @@ def _extract_requirement_ids(text: str) -> List[str]:
 
 
 def _evidence_is_grounded(ev: Evidence, req: SpecRequirement, ctx: GitContext) -> bool:
-    """Verify provenance and literal quotes against the exact supplied source material."""
-    if not ev.code_quote or not ev.spec_quote or ev.line_start is None or ev.line_end is None:
+    return bool(ev.spec_quote and ev.spec_quote in (req.raw_text or req.description)
+                and _code_evidence_is_grounded(ev, ctx))
+
+
+def _code_evidence_is_grounded(ev: Evidence, ctx: GitContext) -> bool:
+    """Check code provenance independently of whether a spec link exists."""
+    if not ev.code_quote or ev.line_start is None or ev.line_end is None:
         return False
     if ev.line_start < 1 or ev.line_end < ev.line_start:
-        return False
-    if ev.spec_quote not in (req.raw_text or req.description):
         return False
     for f in ctx.files:
         if ev.file_path not in (f.filename, f.old_path, f.new_path) or not f.patch:
@@ -336,6 +339,15 @@ class SpecGuardOrchestrator:
                 language=effective_language,
             )
 
+        if any("invalid_model_response" in finding.limitations for finding in findings):
+            is_partial = True
+            current_limitations.append(
+                "Ответ модели для части требований не соответствует формату; результаты по ним не получены."
+                if effective_language == "ru" else
+                "Some model responses did not match the required schema; those requirements remain unevaluated."
+            )
+            current_missing_data.append("valid_model_response")
+
         if any("Evidence could not be verified" in lim for f in findings for lim in f.limitations):
             is_partial = True
             current_limitations.append("Some model evidence could not be verified against the supplied materials.")
@@ -388,12 +400,33 @@ class SpecGuardOrchestrator:
                 language=language,
             )
 
-            raw_resp = self.llm_client.generate(
-                messages,
-                temperature=0.0,
-                response_format="json",
-            )
-            finding = parse_finding_response(raw_resp)
+            for attempt in range(2):
+                try:
+                    raw_resp = self.llm_client.generate(
+                        messages, temperature=0.0, response_format="json",
+                    )
+                    finding = parse_finding_response(raw_resp)
+                    break
+                except LLMResponseParsingError:
+                    if attempt == 0:
+                        messages = [*messages, {"role": "user", "content": (
+                            "The previous response did not match the required Finding JSON schema. "
+                            "Evaluate the same requirement again. evidence and counter_evidence must be "
+                            "arrays of Evidence objects with file_path, revision, line_start, line_end, "
+                            "code_quote and spec_quote. Never put strings in these arrays. "
+                            "Put explanations without verified source quotes in description or limitations. "
+                            "Use empty arrays when no evidence exists; do not invent citations. "
+                            "Return only one Finding JSON object in the requested report language."
+                        )}]
+                    else:
+                        finding = Finding(
+                            req_id=req.req_id, title=req.title or req.req_id,
+                            status=RequirementStatus.INSUFFICIENT_DATA,
+                            description=("Не удалось получить ответ модели в требуемом формате после повторной попытки."
+                                         if language == "ru" else
+                                         "The model response remained invalid after one retry."),
+                            limitations=["invalid_model_response"],
+                        )
 
             # Harmonize req_id and title if mock engine returned standard default fixture ID
             if req and finding.req_id != req.req_id and finding.req_id in (

@@ -16,6 +16,7 @@ from specguard.cli.history import HistoryStore
 from specguard.cli.picker import SelectionCancelled, choose
 from specguard.cli.render import render_report
 from specguard.cli.viewer import ReportViewer
+from specguard.cli.repositories import saved_repositories, save_repository, delete_repository
 from specguard.cli.service import check_model_connection, review, run_audit
 
 app = typer.Typer(help="Проверка изменений GitHub по ТЗ.", no_args_is_help=False)
@@ -27,8 +28,8 @@ def _error(exc):
     console.print(Text(f"Ошибка: {exc}", style="bold #f17d8b"))
 
 
-def _choose(title, options, extra=None):
-    return choose(title, options, extra)
+def _choose(title, options, extra=None, searchable=False, **kwargs):
+    return choose(title, options, extra, searchable=searchable, **kwargs)
 
 
 def _catalog_pick(kind, repo=None):
@@ -39,7 +40,9 @@ def _catalog_pick(kind, repo=None):
         while True:
             console.print("Загрузка репозиториев…" if kind == "repo" else "Загрузка pull requests…")
             items = catalog.repositories(page, query) if kind == "repo" else catalog.pull_requests(repo, page)
-            options = list(items)
+            saved = saved_repositories() if kind == "repo" else []
+            options = [(f"★ {name}", name) for name in saved]
+            options.extend((label, value) for label, value in items if value.casefold() not in {name.casefold() for name in saved})
             if not items:
                 console.print("Репозитории не найдены по выбранному запросу." if kind == "repo" else "Открытых PR нет.")
             if kind == "repo":
@@ -51,7 +54,8 @@ def _catalog_pick(kind, repo=None):
                 options.append(("← Предыдущая страница", "__previous__"))
             if len(items) == 50:
                 options.append(("Следующая страница →", "__next__"))
-            result = _choose("Репозитории" if kind == "repo" else "Открытые pull requests", options, "Ввести вручную")
+            result = _choose("Репозитории" if kind == "repo" else "Открытые pull requests", options, "Ввести вручную",
+                             deletable=saved, on_delete=delete_repository if kind == "repo" else None)
             if result == "__url__":
                 while True:
                     url = Prompt.ask("Ссылка GitHub, например https://github.com/owner/repo (пусто — назад)", default="")
@@ -59,7 +63,7 @@ def _catalog_pick(kind, repo=None):
                         break
                     try:
                         owner, name = parse_repo(url)
-                        return f"{owner}/{name}"
+                        return save_repository(f"{owner}/{name}")
                     except ValueError:
                         _error("Укажите ссылку на репозиторий GitHub: https://github.com/owner/repo")
             elif result == "__search__":
@@ -92,7 +96,7 @@ def _select_specs(start=None):
         options += [(f"📁 {item.name}", item) for item in entries if item.is_dir()]
         options += [(f"📄 {item.name}", item) for item in entries
                     if item.is_file() and item.suffix.lower() in {".txt", ".md", ".docx", ".pdf"}]
-        chosen = _choose(f"Выбор ТЗ · {directory}", options, "Отмена")
+        chosen = _choose(f"Выбор ТЗ · {directory}", options, "Отмена", searchable=True)
         if chosen is None:
             raise SelectionCancelled()
         if chosen.is_dir():
@@ -106,6 +110,29 @@ def _select_specs(start=None):
             raise SelectionCancelled()
         if action == "done":
             return [str(path) for path in selected]
+
+
+def _choose_audit_specs():
+    source = _choose("Откуда взять ТЗ?", [("Выбрать файлы", "files"), ("Из предыдущей проверки", "history")], "Назад")
+    if source is None:
+        raise SelectionCancelled()
+    if source == "files":
+        return _select_specs()
+    reports = [report for report in history_store.list() if report.metadata.get("spec_snapshots")]
+    audit_id = _choose("Выберите предыдущую проверку", [
+        (f"{report.timestamp} · {report.target_repo}@{report.target_ref} · {report.audit_id}", report.audit_id)
+        for report in reports], "Назад")
+    if audit_id is None:
+        raise SelectionCancelled()
+    report = next(report for report in reports if report.audit_id == audit_id)
+    specs = list(report.metadata["spec_snapshots"])
+    console.print(Panel(Text("\n".join(item["path"] for item in specs)), title="Сохранённые ТЗ"))
+    action = _choose("Использовать сохранённые ТЗ?", [("Подтвердить", "done"), ("Добавить новые файлы", "add")], "Назад")
+    if action is None:
+        raise SelectionCancelled()
+    if action == "add":
+        specs.extend(_select_specs())
+    return specs
 
 
 def _select_mcp_server(start=None):
@@ -122,7 +149,7 @@ def _select_mcp_server(start=None):
             directory = directory.parent
             continue
         options.append(("Искать github-mcp-server в PATH", "__path__"))
-        chosen = _choose(f"Исполняемый файл MCP · {directory}", options, "Отмена")
+        chosen = _choose(f"Исполняемый файл MCP · {directory}", options, "Отмена", searchable=True)
         if chosen is None:
             raise SelectionCancelled()
         if chosen == "__path__":
@@ -294,7 +321,7 @@ def _interactive():
             elif choice == "github":
                 _github_settings()
             elif choice == "audit":
-                spec = _select_specs()
+                spec = _choose_audit_specs()
                 mode = _choose("Источник данных", [("GitHub MCP", "live"), ("Демонстрация на моках", "demo")])
                 demo = mode == "demo"
                 repo = None

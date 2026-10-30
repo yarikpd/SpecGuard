@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from specguard.agent.llm_client import MockLLMClient, OpenAILLMClient, extract_json
 from specguard.agent.orchestrator import SpecGuardOrchestrator
+from specguard.agent.scope import review_change_scope
 from specguard.cli.config import AppConfig, load_github_token, load_mcp_server
 from specguard.cli.history import HistoryStore
 from specguard.mcp.github_client import GitHubMCPClient, MockGitHubClient, parse_repo
@@ -62,7 +63,7 @@ def run_audit(config: AppConfig, store: HistoryStore, spec: str, repo: str,
     if not target.strip():
         raise ValueError("Выберите PR или укажите SHA коммита")
     specs = [spec] if isinstance(spec, (str, Path)) else list(spec)
-    if not specs or any(not Path(item).is_file() for item in specs):
+    if not specs or any(not Path(item).is_file() for item in specs if not isinstance(item, dict)):
         raise ValueError("Файл ТЗ не найден")
     if not demo:
         config.llm.validate()
@@ -75,12 +76,28 @@ def run_audit(config: AppConfig, store: HistoryStore, spec: str, repo: str,
         git = _close_with(stack, MockGitHubClient() if demo else GitHubMCPClient(mcp_server_cmd=load_mcp_server() or None, auth_token=load_github_token()))
         progress("Извлечение и индексация ТЗ…")
         rag = RAGService(embedding, storage_dir=store.directory / "snapshots")
-        snapshots, warnings, requirements = [], [], []
+        snapshots, warnings, requirements, spec_paths = [], [], [], []
         for item in specs:
-            document_index, snapshot, document_warnings = rag.index_document(item)
+            if isinstance(item, dict):
+                snapshot_id = item.get("snapshot_id", "")
+                if not isinstance(snapshot_id, str) or len(snapshot_id) != 64 or any(c not in "0123456789abcdef" for c in snapshot_id):
+                    raise ValueError("Некорректный идентификатор снимка ТЗ")
+                snapshot = rag.snapshot_store.load_snapshot(snapshot_id)
+                if snapshot is None:
+                    raise ValueError("Снимок ТЗ из истории не найден. Выберите исходный файл заново.")
+                path = item["path"]
+                document_warnings = snapshot.warnings
+                document_index = HybridSpecIndex(embedding)
+                document_index.build_index(snapshot.requirements)
+                document_index.snapshot_id = snapshot.snapshot_id
+                document_index.source_warnings = list(snapshot.warnings)
+            else:
+                path = str(Path(item).resolve())
+                document_index, snapshot, document_warnings = rag.index_document(item)
+            spec_paths.append(path)
             snapshots.append(snapshot)
-            warnings.extend(f"{Path(item).name}: {warning}" for warning in document_warnings)
-            requirements.extend(req.model_copy(deep=True, update={"source_file": str(Path(item).resolve())})
+            warnings.extend(f"{Path(path).name}: {warning}" for warning in document_warnings)
+            requirements.extend(req.model_copy(deep=True, update={"source_file": path})
                                 for req in snapshot.requirements)
         if len(snapshots) == 1:
             index = document_index
@@ -92,10 +109,10 @@ def run_audit(config: AppConfig, store: HistoryStore, spec: str, repo: str,
                 warnings.append("Совпадающие идентификаторы требований различаются префиксами DOC1, DOC2 и т. д. по порядку выбранных файлов.")
             for req in requirements:
                 if counts[req.req_id.upper()] > 1:
-                    source = next(i for i, item in enumerate(specs, 1)
+                    source = next(i for i, item in enumerate(spec_paths, 1)
                                   if str(Path(item).resolve()) == req.source_file)
                     req.req_id = f"DOC{source}-{req.req_id}"
-                req.related_req_ids = [f"DOC{next(i for i, item in enumerate(specs, 1) if str(Path(item).resolve()) == req.source_file)}-{rid}"
+                req.related_req_ids = [f"DOC{next(i for i, item in enumerate(spec_paths, 1) if str(Path(item).resolve()) == req.source_file)}-{rid}"
                                        if counts[rid.upper()] > 1 else rid for rid in req.related_req_ids]
             ids = [req.req_id.upper() for req in requirements]
             if len(ids) != len(set(ids)):
@@ -111,10 +128,15 @@ def run_audit(config: AppConfig, store: HistoryStore, spec: str, repo: str,
         if len(snapshots) > 1:
             report.saved_requirements = [req.model_copy(deep=True) for req in requirements]
         report.spec_snapshot_id = snapshots[0].snapshot_id if len(snapshots) == 1 else None
-        report.metadata["spec_snapshots"] = [{"path": str(Path(path).resolve()), "snapshot_id": snap.snapshot_id} for path, snap in zip(specs, snapshots)]
+        report.metadata["spec_snapshots"] = [{"path": str(Path(path).resolve()), "snapshot_id": snap.snapshot_id} for path, snap in zip(spec_paths, snapshots)]
         report.metadata.update({"mode": "demo" if demo else "live",
                                 "llm_profile": {"model": "mock"} if demo else config.llm.public(),
                                 "embedding_profile": {"model": "mock"} if demo else config.embedding.public()})
+        if not demo:
+            progress("Поиск изменений без найденной связи с выбранным ТЗ…")
+            review_change_scope(report, index.requirements, llm)
+        else:
+            report.metadata["scope_review"] = "not_run_demo"
         store.save(report)
         progress("Отчёт сохранён")
         return report

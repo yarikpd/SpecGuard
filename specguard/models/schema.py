@@ -92,6 +92,8 @@ class GitContext(BaseModel):
 
     target_repo: str
     target_ref: str
+    pr_number: Optional[int] = None
+    pr_title: Optional[str] = None
     base_sha: Optional[str] = None
     head_sha: str
     is_merge_commit: bool = False
@@ -99,6 +101,13 @@ class GitContext(BaseModel):
     files: List[FileChange] = Field(default_factory=list)
     limitations: List[str] = Field(default_factory=list)
     is_partial: bool = False
+
+
+class ScopeObservation(BaseModel):
+    """A code change with no identified requirement link; not a violation."""
+    title: str
+    description: str
+    evidence: List[Evidence] = Field(default_factory=list)
 
 
 class AuditReport(BaseModel):
@@ -115,6 +124,7 @@ class AuditReport(BaseModel):
     user_summary: str = ""
     language: str = "ru"
     findings: List[Finding] = Field(default_factory=list)
+    scope_observations: List[ScopeObservation] = Field(default_factory=list)
     limitations: List[str] = Field(default_factory=list)
     missing_data: List[str] = Field(default_factory=list)
     is_partial: bool = False

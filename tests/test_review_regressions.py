@@ -120,3 +120,46 @@ def test_dispute_cannot_overturn_without_comparative_base():
         DisputeRequest(audit_id="a", finding_req_id="FR-001", user_comment="review"), report)
     assert response.dispute_status == "MODIFIED"
     assert response.updated_finding.status == RequirementStatus.INSUFFICIENT_DATA
+
+
+def test_invalid_counter_evidence_retries_and_preserves_other_findings():
+    import json
+    req, ctx, _ = fixture_data()
+    bad = json.dumps(dict(req_id=req.req_id, title='Check', status='NOT_AFFECTED',
+                          description='Unrelated', counter_evidence=['No changes in this PR']))
+    good = json.dumps(dict(req_id=req.req_id, title='Check', status='NOT_AFFECTED',
+                           description='Unrelated', counter_evidence=[]))
+    class Client:
+        def __init__(self, responses):
+            self.responses = iter(responses)
+            self.calls = 0
+        def generate(self, *args, **kwargs):
+            self.calls += 1
+            return next(self.responses)
+    client = Client([bad, good])
+    core = SpecGuardOrchestrator(llm_client=client)
+    findings = core._analyze_changes(ctx, [req], '', '', 'base')
+    assert client.calls == 2
+    assert findings[0].status == RequirementStatus.NOT_AFFECTED
+    assert findings[0].counter_evidence == []
+    client = Client([bad, bad, good])
+    core = SpecGuardOrchestrator(llm_client=client)
+    second = req.model_copy(update={'req_id': 'FR-002'})
+    findings = core._analyze_changes(ctx, [req, second], '', '', 'base')
+    assert findings[0].status == RequirementStatus.INSUFFICIENT_DATA
+    assert 'invalid_model_response' in findings[0].limitations
+    assert findings[1].status == RequirementStatus.NOT_AFFECTED
+
+
+def test_repeated_schema_failure_returns_partial_report_with_saved_materials():
+    from specguard.rag.index import SpecIndex
+    req, ctx, _ = fixture_data()
+    class Client:
+        def generate(self, *args, **kwargs):
+            return '{"counter_evidence": ["No source quote"]}'
+    report = SpecGuardOrchestrator(spec_index=SpecIndex([req]), llm_client=Client()).run_audit(
+        repo='a/b', target_ref='PR#6', git_context=ctx)
+    assert report.is_partial
+    assert 'valid_model_response' in report.missing_data
+    assert report.findings[0].status == RequirementStatus.INSUFFICIENT_DATA
+    assert report.saved_requirements and report.saved_git_context

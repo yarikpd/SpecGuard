@@ -813,19 +813,17 @@ class TestOrchestratorErrorHandling:
     def test_llm_parsing_error_on_garbage_response(
         self, sample_spec_index: SpecIndex, sample_git_context: GitContext
     ):
-        """Malformed JSON from LLM raises LLMResponseParsingError."""
+        """A malformed response is retried without aborting the audit."""
         client = MockLLMClient()
         client.enqueue_response("<<<Non-JSON Garbage Text>>>")
         orchestrator = SpecGuardOrchestrator(
             spec_index=sample_spec_index,
             llm_client=client,
         )
-        with pytest.raises(LLMResponseParsingError):
-            orchestrator.run_audit(
-                repo="acme/repo",
-                target_ref="PR#42",
-                git_context=sample_git_context,
-            )
+        report = orchestrator.run_audit(
+            repo="acme/repo", target_ref="PR#42", git_context=sample_git_context,
+        )
+        assert report.findings
 
     def test_empty_diff_produces_clean_report(
         self, sample_spec_index: SpecIndex

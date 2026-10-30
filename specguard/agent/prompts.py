@@ -181,6 +181,8 @@ AUDIT_SYSTEM_PROMPT_RU = """\
   * `spec_quote`: ТОЧНАЯ дословная цитата из текста требования ТЗ (сохраняя язык оригинала).
 - Цитаты сохраняют язык оригинала (не переводить код и цитаты ТЗ, per AC-005).
 
+Оба списка `evidence` и `counter_evidence` содержат ТОЛЬКО объекты Evidence по схеме ниже, никогда строки. Если цитат нет — верни []; текстовые пояснения перенеси в `description` или `limitations`. Не выдумывай цитаты.
+
 ### ЯЗЫК ВЫВОДА:
 - Все пояснительные тексты (`title`, `description`, `limitations`) формулируй на РУССКОМ языке.
 - Цитаты `code_quote` и `spec_quote` должны оставаться дословными выдержками из источников.
@@ -253,6 +255,8 @@ If `status` == "VIOLATED", `severity` MUST be set to one of:
   * `spec_quote`: VERBATIM quote from the specification text.
 - Quotes preserve their verbatim source language without translation (AC-005).
 
+Both `evidence` and `counter_evidence` contain ONLY Evidence objects matching the schema below, never strings. Without verified quotes use []; put textual explanations in `description` or `limitations`. Never invent citations.
+
 ### LANGUAGE:
 - Formulate `title`, `description`, and `limitations` in ENGLISH.
 - Quotes (`code_quote`, `spec_quote`) must retain their exact original wording.
@@ -319,6 +323,8 @@ DISPUTE_SYSTEM_PROMPT_RU = """\
   * Довод пользователя не отменяет нарушение полностью, но выявляет смягчающие факторы, неоднозначность или ограничения видимости.
   * Например, `severity` снижается с `CONFIRMED` до `SUSPECTED`, добавляются `counter_evidence` или `limitations`.
 
+Оба списка `evidence` и `counter_evidence` содержат ТОЛЬКО объекты Evidence по схеме ниже, никогда строки. Если цитат нет — верни []; текстовые пояснения перенеси в `description` или `limitations`. Не выдумывай цитаты.
+
 ### ЯЗЫК ВЫВОДА:
 - Обоснование `reasoning`, обновленное описание и заголовок формулируются на РУССКОМ языке.
 - Цитаты сохраняют язык оригинала.
@@ -363,6 +369,8 @@ Your task is to impartially re-evaluate a contested audit finding (`Finding`) st
   * In `updated_finding`: original `VIOLATED` status and severity are retained.
 - `MODIFIED`: The finding is adjusted. The user's argument reveals ambiguity, mitigations, or partial applicability.
   * Example: severity reduced from `CONFIRMED` to `SUSPECTED`, with counter-evidence or limitations added.
+
+Both `evidence` and `counter_evidence` contain ONLY Evidence objects matching the schema below, never strings. Without verified quotes use []; put textual explanations in `description` or `limitations`. Never invent citations.
 
 ### LANGUAGE:
 - Write `reasoning` and updated finding text in ENGLISH.

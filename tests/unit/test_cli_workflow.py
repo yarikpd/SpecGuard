@@ -93,3 +93,22 @@ def test_select_multiple_specs(tmp_path, monkeypatch):
     choices = iter([first, "add", second, "done"])
     monkeypatch.setattr(main, "_choose", lambda *args, **kwargs: next(choices))
     assert main._select_specs(tmp_path) == [str(first), str(second)]
+
+
+def test_reuse_saved_specs_after_source_deleted_and_add_new_file(tmp_path):
+    from specguard.cli.config import AppConfig, APIConfig
+    from specguard.cli.service import run_audit
+    config = AppConfig(APIConfig(), APIConfig())
+    store = HistoryStore(tmp_path / 'history')
+    first = tmp_path / 'first.md'
+    first.write_text('FR-001: Password must contain at least eight characters.')
+    old = run_audit(config, store, str(first), 'owner/repo', '1', '', demo=True)
+    first.unlink()
+    second = tmp_path / 'second.md'
+    second.write_text('FR-002: Log failed login attempts.')
+    specs = old.metadata['spec_snapshots'] + [str(second)]
+    new = run_audit(config, store, specs, 'owner/repo', '2', '', demo=True)
+    assert len(new.metadata['spec_snapshots']) == 2
+    assert new.metadata['spec_snapshots'][0]['snapshot_id'] == old.metadata['spec_snapshots'][0]['snapshot_id']
+    assert {r.req_id for r in new.saved_requirements} >= {'FR-001', 'FR-002'}
+    assert len(store.list()) == 2

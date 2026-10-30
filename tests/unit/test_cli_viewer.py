@@ -22,3 +22,24 @@ def test_long_report_scrolls_both_directions_and_closes():
             await pilot.press('escape')
         assert not viewer.is_running
     asyncio.run(exercise())
+
+
+def test_pr_title_link_survives_history_and_opens_on_click():
+    from specguard.cli.render import render_report
+    from specguard.models.schema import AuditReport, GitContext
+    report = AuditReport(audit_id='audit_pr', target_repo='owner/repo', target_ref='7',
+                         saved_git_context=GitContext(target_repo='owner/repo', target_ref='PR#7',
+                                                      head_sha='abc', pr_number=7, pr_title='Add validation [bold]'))
+    report = AuditReport.model_validate_json(report.model_dump_json())
+    header = render_report(report).renderables[0].renderable
+    assert 'PR #7 · Add validation [bold]' in header.plain
+    assert any(span.style.link == 'https://github.com/owner/repo/pull/7' for span in header.spans)
+    async def exercise():
+        viewer = ReportViewer(header)
+        opened = []
+        viewer.open_url = lambda url: opened.append(url)
+        async with viewer.run_test(size=(100, 24)) as pilot:
+            await pilot.click('#content', offset=(3, 0))
+            await pilot.pause()
+            assert opened == ['https://github.com/owner/repo/pull/7']
+    asyncio.run(exercise())
