@@ -6,6 +6,8 @@ fixtures satisfying 100% offline test execution (R5).
 
 from __future__ import annotations
 
+from tests.report_fixtures import make_saved_report
+
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 import pytest
@@ -276,7 +278,7 @@ def make_audit_report(make_finding: Callable[..., Finding]) -> Callable[..., Aud
         user_summary: str = "Реализация валидации пароля по FR-001",
     ) -> AuditReport:
         f_list = findings if findings is not None else [make_finding()]
-        return AuditReport(
+        return make_saved_report(
             audit_id=audit_id,
             timestamp=datetime.now(timezone.utc).isoformat(),
             target_repo=target_repo,

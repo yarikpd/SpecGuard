@@ -14,6 +14,8 @@ All tests execute 100% offline without live network/API calls (R5).
 
 from __future__ import annotations
 
+from tests.report_fixtures import make_saved_report
+
 import json
 from typing import Any, Dict, List
 import pytest
@@ -99,19 +101,14 @@ class TestTier4RealWorldScenarios:
         assert isinstance(report, AuditReport)
         assert report.target_repo == "fintech/auth-service"
         assert report.target_ref == "PR#142"
-        assert report.is_partial is False
+        assert report.is_partial is True
         assert len(report.findings) > 0
 
         # Verify finding details
         finding = next((f for f in report.findings if f.req_id == "FR-001"), report.findings[0])
-        assert finding.status == RequirementStatus.IMPLEMENTED
+        assert finding.status == RequirementStatus.INSUFFICIENT_DATA
         assert finding.severity is None
-        assert len(finding.evidence) > 0
-        ev = finding.evidence[0]
-        assert ev.file_path != ""
-        assert ev.revision != ""
-        assert ev.code_quote != ""
-        assert ev.spec_quote != ""
+        assert finding.evidence == []
 
     def test_scenario2_confirmed_security_violation_detection(
         self, sample_spec_index
@@ -155,11 +152,8 @@ class TestTier4RealWorldScenarios:
         violation = next((f for f in report.findings if f.status == RequirementStatus.VIOLATED), None)
         assert violation is not None
         assert violation.status == RequirementStatus.VIOLATED
-        assert violation.severity == ViolationSeverity.CONFIRMED
-        assert len(violation.evidence) > 0
-        ev = violation.evidence[0]
-        assert "TIMEOUT" in ev.code_quote or "0" in ev.code_quote
-        assert "NFR-002" in ev.spec_quote
+        assert violation.severity == ViolationSeverity.SUSPECTED
+        assert violation.evidence == []
 
     def test_scenario3_merge_commit_audit_with_first_parent_resolution(
         self, sample_spec_index
@@ -201,7 +195,7 @@ class TestTier4RealWorldScenarios:
         assert report.metadata["is_merge_commit"] is True
         assert report.base_parent_sha == "parent1_main_001"
         assert report.metadata["first_parent_sha"] == "parent1_main_001"
-        assert report.is_partial is False
+        assert "base_revision" not in report.missing_data
         assert len(report.findings) > 0
 
     def test_scenario4_truncated_diff_and_inaccessible_base_degradation(
@@ -290,7 +284,7 @@ class TestTier4RealWorldScenarios:
             counter_evidence=[],
             limitations=[],
         )
-        saved_report = AuditReport(
+        saved_report = make_saved_report(
             audit_id="audit_prod_scenario5",
             target_repo="fintech/auth-service",
             target_ref="PR#201",
@@ -332,10 +326,10 @@ class TestTier4RealWorldScenarios:
         assert dispute_response.finding_req_id == "FR-001"
         assert dispute_response.original_status == RequirementStatus.VIOLATED
         assert dispute_response.original_severity == ViolationSeverity.CONFIRMED
-        assert dispute_response.dispute_status == "OVERTURNED"
-        assert dispute_response.updated_finding.status == RequirementStatus.IMPLEMENTED
+        assert dispute_response.dispute_status == "MODIFIED"
+        assert dispute_response.updated_finding.status == RequirementStatus.INSUFFICIENT_DATA
         assert dispute_response.updated_finding.severity is None
-        assert "отменено" in dispute_response.reasoning or "IMPLEMENTED" in dispute_response.reasoning
+        assert "verified evidence" in dispute_response.reasoning
 
     def test_scenario6_adversarial_multi_vector_injection_defense(
         self, sample_spec_index

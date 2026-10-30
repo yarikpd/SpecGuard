@@ -238,21 +238,23 @@ class RequirementExtractor:
                     flush_item()
                     current_item_section = get_current_section()
                     current_item_lines.append(line)
-                elif current_item_lines:
-                    if not line_stripped:
-                        flush_item()
-                    else:
-                        current_item_lines.append(line)
+                elif not line_stripped:
+                    flush_item()
+                else:
+                    if not current_item_lines:
+                        current_item_section = get_current_section()
+                    current_item_lines.append(line)
             elif has_list_items:
                 if is_list_start:
                     flush_item()
                     current_item_section = get_current_section()
                     current_item_lines.append(line)
-                elif current_item_lines:
-                    if not line_stripped:
-                        flush_item()
-                    else:
-                        current_item_lines.append(line)
+                elif not line_stripped:
+                    flush_item()
+                else:
+                    if not current_item_lines:
+                        current_item_section = get_current_section()
+                    current_item_lines.append(line)
             else:
                 if not line_stripped:
                     flush_item()

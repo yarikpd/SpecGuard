@@ -48,10 +48,10 @@ class RAGService:
         raw_text, warnings = parse_document(path)
         content_hash = hashlib.sha256(raw_text.encode("utf-8")).hexdigest()
 
-        cached_snapshot = self.snapshot_store.find_by_content_hash(
-            content_hash=content_hash,
-            embedding_model=self.model_name,
-        )
+        snapshot_id = hashlib.sha256(
+            (content_hash + "\0" + self.model_name + "\0" + str(path.resolve()) + "\0" + repr(warnings)).encode()
+        ).hexdigest()
+        cached_snapshot = self.snapshot_store.load_snapshot(snapshot_id)
 
         if cached_snapshot is not None:
             logger.info(
@@ -75,6 +75,7 @@ class RAGService:
                 embedding_model=self.model_name,
                 requirements=requirements,
                 warnings=warnings,
+                snapshot_id=snapshot_id,
             )
             self.snapshot_store.save_snapshot(snapshot)
             logger.info(
@@ -86,6 +87,8 @@ class RAGService:
 
         index = HybridSpecIndex(self.embedding_client)
         index.build_index(requirements)
+        index.snapshot_id = snapshot.snapshot_id
+        index.source_warnings = list(all_warnings)
 
         return index, snapshot, all_warnings
 
@@ -107,4 +110,6 @@ class RAGService:
 
         index = HybridSpecIndex(self.embedding_client)
         index.build_index(snapshot.requirements)
+        index.snapshot_id = snapshot.snapshot_id
+        index.source_warnings = list(snapshot.warnings)
         return index, snapshot
