@@ -9,6 +9,7 @@ from specguard.models.schema import (AuditReport, DisputeRequest, Evidence, File
 from specguard.rag import MockEmbeddingClient, RAGService
 from specguard.rag.extractor import RequirementExtractor
 from specguard.mcp.github_client import GitHubMCPClient
+from specguard.mcp.errors import GitSourceError, GitSourceErrorKind
 
 
 def fixture_data():
@@ -64,9 +65,12 @@ def test_snapshot_sources_and_warnings_are_not_reused(tmp_path, monkeypatch):
     assert index.snapshot_id == second.snapshot_id and index.source_warnings == warnings
 
 
-def test_live_client_never_returns_mock_data():
-    with pytest.raises(NotImplementedError):
+def test_live_client_never_returns_mock_data(monkeypatch):
+    monkeypatch.delenv("GITHUB_PERSONAL_ACCESS_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    with pytest.raises(GitSourceError) as error:
         GitHubMCPClient().get_pr_context("a/b", 1)
+    assert error.value.kind == GitSourceErrorKind.NOT_CONFIGURED
 
 
 def test_verified_audit_and_dispute_survive_serialization():
