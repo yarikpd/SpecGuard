@@ -20,6 +20,7 @@ class GitSourceErrorKind(str, Enum):
     TIMEOUT = "timeout"
     UNAVAILABLE = "unavailable"
     PROTOCOL = "protocol"
+    INCOMPATIBLE = "incompatible"
     NOT_CONFIGURED = "not_configured"
     TOOL_ERROR = "tool_error"
 
@@ -39,6 +40,7 @@ _KIND_TEXT = {
     GitSourceErrorKind.TIMEOUT: "превышено время ожидания ответа",
     GitSourceErrorKind.UNAVAILABLE: "источник временно недоступен",
     GitSourceErrorKind.PROTOCOL: "некорректный ответ MCP-сервера",
+    GitSourceErrorKind.INCOMPATIBLE: "GitHub MCP Server несовместим с адаптером",
     GitSourceErrorKind.NOT_CONFIGURED: "живое подключение к GitHub MCP не настроено",
     GitSourceErrorKind.TOOL_ERROR: "ошибка инструмента MCP",
 }

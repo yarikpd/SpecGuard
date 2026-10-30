@@ -12,6 +12,8 @@ Empirically stress-tests:
 
 from __future__ import annotations
 
+from tests.report_fixtures import make_saved_report
+
 import json
 from typing import Any, Dict, List, Optional
 import pytest
@@ -70,7 +72,7 @@ def confirmed_violation_report() -> AuditReport:
         counter_evidence=[],
         limitations=[],
     )
-    return AuditReport(
+    return make_saved_report(
         audit_id="audit_adv_challenge_001",
         timestamp="2026-10-30T00:00:00Z",
         target_repo="acme/specguard-core",

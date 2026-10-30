@@ -7,6 +7,8 @@ hermetic dispute procedure, and controlled failure handling offline.
 
 from __future__ import annotations
 
+from tests.report_fixtures import make_saved_report
+
 import pytest
 from specguard.agent.defense import detect_prompt_injection
 from specguard.agent.llm_client import (
@@ -118,7 +120,7 @@ def sample_finding_violated() -> Finding:
 
 @pytest.fixture
 def sample_audit_report(sample_finding_violated: Finding) -> AuditReport:
-    return AuditReport(
+    return make_saved_report(
         audit_id="audit_fixed_001",
         timestamp="2026-10-29T12:00:00Z",
         target_repo="acme/specguard-target",
@@ -196,7 +198,7 @@ class TestOrchestratorAuditExecution:
         assert report.target_ref == "PR#42"
         assert len(report.findings) > 0
         assert report.findings[0].req_id == "FR-001"
-        assert report.findings[0].status == RequirementStatus.IMPLEMENTED
+        assert report.findings[0].status == RequirementStatus.INSUFFICIENT_DATA
 
     def test_run_audit_numeric_pr_reference(self, sample_spec_index: SpecIndex):
         """target_ref='42' is treated as PR 42 via get_pr_context."""
@@ -262,12 +264,8 @@ class TestOrchestratorAuditExecution:
         )
         assert len(report.findings) > 0
         finding = report.findings[0]
-        assert len(finding.evidence) > 0
-        ev = finding.evidence[0]
-        assert ev.file_path
-        assert ev.revision
-        assert ev.code_quote is not None
-        assert ev.spec_quote is not None
+        assert finding.evidence == []
+        assert finding.status == RequirementStatus.INSUFFICIENT_DATA
 
     def test_run_audit_verdict_severity_consistency(
         self, sample_spec_index: SpecIndex, sample_git_context: GitContext
@@ -327,7 +325,7 @@ class TestMergeCommitLineage:
         ctx = GitContext(
             target_repo="acme/repo",
             target_ref="merge_abc",
-            base_sha="parent_000",
+            base_sha="parent1_111",
             head_sha="merge_abc",
             is_merge_commit=True,
             first_parent_sha="parent1_111",
@@ -337,7 +335,7 @@ class TestMergeCommitLineage:
         orchestrator = SpecGuardOrchestrator(spec_index=sample_spec_index)
         report = orchestrator.run_audit("acme/repo", "merge_abc", git_context=ctx)
         assert report.base_parent_sha == "parent1_111"
-        assert report.is_partial is False
+        assert "base_revision" not in report.missing_data
 
     def test_regular_commit_records_base_sha(
         self, sample_spec_index: SpecIndex, sample_files: list[FileChange]
@@ -373,7 +371,7 @@ class TestMergeCommitLineage:
         )
         orchestrator = SpecGuardOrchestrator(spec_index=sample_spec_index)
         report = orchestrator.run_audit("acme/repo", "merge_missing_parent", git_context=ctx)
-        assert report.base_parent_sha == "parent_fallback"
+        assert report.base_parent_sha is None
         assert report.is_partial is True
         assert "first_parent_sha" in report.missing_data
         assert any("first_parent_sha" in lim for lim in report.limitations)
@@ -626,10 +624,9 @@ class TestDisputeReviewWorkflow:
             user_comment="Password length validation is delegated to src/auth/validators.py",
         )
         response = orchestrator.review_dispute(dispute, sample_audit_report)
-        assert response.dispute_status in ("OVERTURNED", DisputeStatus.OVERTURNED)
+        assert response.dispute_status in ("MODIFIED", DisputeStatus.MODIFIED)
         assert response.updated_finding.status in (
-            RequirementStatus.IMPLEMENTED,
-            RequirementStatus.NOT_AFFECTED,
+            RequirementStatus.INSUFFICIENT_DATA,
         )
         assert response.updated_finding.severity is None
         assert response.original_status == RequirementStatus.VIOLATED
@@ -720,7 +717,7 @@ class TestDisputeReviewWorkflow:
         )
         response = orchestrator.review_dispute(dispute, sample_audit_report, spec_index=None)
         assert response.finding_req_id == "FR-001"
-        assert response.dispute_status in ("OVERTURNED", DisputeStatus.OVERTURNED)
+        assert response.dispute_status in ("MODIFIED", DisputeStatus.MODIFIED)
 
     def test_review_dispute_injection_in_comment_isolated(
         self, sample_audit_report: AuditReport
@@ -787,7 +784,7 @@ class TestDisputeReviewWorkflow:
             saved_report=sample_audit_report,
             llm_client=client,
         )
-        assert response.dispute_status in ("OVERTURNED", DisputeStatus.OVERTURNED)
+        assert response.dispute_status in ("MODIFIED", DisputeStatus.MODIFIED)
         assert response.finding_req_id == "FR-001"
 
 

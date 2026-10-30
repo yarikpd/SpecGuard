@@ -8,8 +8,8 @@ Read-only адаптер к GitHub MCP Server (MCP_INTEGRATION.md): разреш
 - ``BaseGitClient`` — контракт для оркестратора (Модуль 1), включая
   ``get_context`` (выбор между PR и коммитом).
 - ``GitHubMCPClient`` — адаптер: нормализация, пагинация, повторы, граничные
-  случаи. Работает поверх ``MCPTransport``: живой stdio-транспорт или
-  имитация ``FakeMCPTransport``.
+  случаи. Работает поверх ``MCPTransport``: живой ``StdioMCPTransport``
+  (запускается сам по переменным окружения) или имитация ``FakeMCPTransport``.
 - ``MockGitHubClient`` — тот же адаптер поверх имитации GitHub MCP, для
   реалистичных сценариев с отказами без интернета и токенов.
 - ``MockGitClient`` — простая заглушка с фиксированными ответами и
@@ -24,22 +24,27 @@ Read-only адаптер к GitHub MCP Server (MCP_INTEGRATION.md): разреш
 - ``get_commit`` → MinimalCommit БЕЗ родителей и без previous_filename;
   файлы постранично (perPage по умолчанию 30), stats — по всему коммиту.
 
-Требует живой проверки (AC-014): разрешает ли GitHub ссылку ``<sha>^N``
-через get_commit и строится ли список файлов merge-коммита относительно
-первого родителя.
+Подтверждено живой проверкой на GitHub 30.10.2026 (github-mcp-server 2.0.3,
+docs/protocols/mcp-live-20261030-094914.md, AC-014): get_commit разрешает
+ссылки ``<sha>^N``, список файлов merge-коммита строится относительно первого
+родителя, список файлов PR — относительно merge-base. При смене версии
+сервера проверку стоит повторить (docs/MCP_LIVE_CHECK.md).
 """
 
 import json
 import re
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, Union
 
 from specguard.mcp.context import GitHubContext
 from specguard.mcp.errors import GitSourceError, GitSourceErrorKind, classify_tool_error
 from specguard.mcp.fake_github import FakeFile, FakeGitHub
+from specguard.mcp.stdio_transport import create_stdio_transport
 from specguard.mcp.transport import (
     SOURCE_MOCK,
+    MCPCompatibilityError,
+    MCPConfigurationError,
     MCPTimeoutError,
     MCPTransport,
     MCPTransportError,
@@ -136,34 +141,42 @@ class GitHubMCPClient(BaseGitClient):
     ``GitContext.limitations`` и ``is_partial``, а повторы — в ``diagnostics``.
 
     Аргументы:
-        transport: транспорт к MCP-серверу. Без него вызов завершится ошибкой
+        mcp_server_cmd: путь к ``github-mcp-server`` (или команда списком);
+            по умолчанию ``SPECGUARD_MCP_SERVER`` или поиск в PATH.
+        auth_token: токен GitHub; по умолчанию ``GITHUB_PERSONAL_ACCESS_TOKEN``
+            или ``GITHUB_TOKEN``. Передаётся серверу только через окружение.
+        transport: готовый транспорт. Если не передан, при первом вызове
+            запускается сервер по stdio; без сервера или токена —
             ``NOT_CONFIGURED`` (подмены данными мока нет).
+        call_timeout: таймаут одного вызова живого сервера, секунды.
         retry_delays: паузы перед повторами при таймауте и недоступности;
             число элементов = число повторов.
         consistency_retries: сколько раз перечитать файлы PR, если head
             изменился во время чтения.
         resolve_parents: определять родителей коммита запросами ``<sha>^N``.
-        merge_diff_semantics_verified: включить после живой проверки того,
-            что GitHub строит список файлов merge-коммита от первого родителя.
+        merge_diff_semantics_verified: GitHub строит список файлов
+            merge-коммита от первого родителя — подтверждено живой проверкой.
+            ``False`` возвращает в отчёт оговорку, что это не проверено.
     """
 
     def __init__(
         self,
-        mcp_server_cmd: Optional[str] = None,
+        mcp_server_cmd: Optional[Union[str, Sequence[str]]] = None,
         auth_token: Optional[str] = None,
         *,
         transport: Optional[MCPTransport] = None,
+        call_timeout: Optional[float] = None,
         retry_delays: Sequence[float] = (1.0, 3.0),
         consistency_retries: int = 1,
         resolve_parents: bool = True,
-        merge_diff_semantics_verified: bool = False,
+        merge_diff_semantics_verified: bool = True,
         sleep: Callable[[float], None] = time.sleep,
     ):
-        # mcp_server_cmd и auth_token понадобятся живому stdio-транспорту.
         # Токен хранится только здесь и не попадает в GitContext.
         self.mcp_server_cmd = mcp_server_cmd
         self._auth_token = auth_token
         self._transport = transport
+        self.call_timeout = call_timeout
         self.retry_delays = tuple(retry_delays)
         self.consistency_retries = max(0, consistency_retries)
         self.resolve_parents = resolve_parents
@@ -416,7 +429,7 @@ class GitHubMCPClient(BaseGitClient):
     ) -> Tuple[Optional[List[str]], List[str]]:
         """Родители через ``get_commit(sha="<sha>^N")``: get_commit их не возвращает.
 
-        None означает «неизвестны». Синтаксис ``^N`` требует живой проверки.
+        None означает «неизвестны». Синтаксис ``^N`` подтверждён живой проверкой.
         """
         if not self.resolve_parents:
             return None, [f"Определение родителей отключено. {PARENTS_UNKNOWN_NOTE}"]
@@ -463,18 +476,39 @@ class GitHubMCPClient(BaseGitClient):
 
     # ------------------------------------------------------------ служебное
 
+    def close(self) -> None:
+        """Остановить живой сервер, если клиент его запускал."""
+        close = getattr(self._transport, "close", None)
+        if callable(close):
+            close()
+
+    def __enter__(self) -> "GitHubMCPClient":
+        return self
+
+    def __exit__(self, *exc_info: Any) -> None:
+        self.close()
+
     def _require_transport(self) -> MCPTransport:
         if self._transport is None:
-            raise GitSourceError(
-                GitSourceErrorKind.NOT_CONFIGURED,
-                "транспорт к GitHub MCP Server не передан; для работы без GitHub используйте MockGitClient",
-            )
+            try:
+                self._transport = create_stdio_transport(
+                    self.mcp_server_cmd, self._auth_token, call_timeout=self.call_timeout
+                )
+            except MCPConfigurationError as exc:
+                raise GitSourceError(
+                    GitSourceErrorKind.NOT_CONFIGURED,
+                    f"{exc}; для работы без GitHub используйте MockGitClient или MockGitHubClient",
+                ) from None
         return self._transport
 
     def _finalize(self, ctx: GitHubContext) -> GitHubContext:
         ctx.source = getattr(self._transport, "source", None)
         if ctx.source == SOURCE_MOCK:
             ctx.limitations.insert(0, MOCK_NOTE)
+        describe = getattr(self._transport, "describe", None)
+        if callable(describe):
+            ctx.diagnostics.insert(0, describe())
+        ctx.diagnostics.extend(getattr(self._transport, "diagnostics", []))
         ctx.limitations = list(dict.fromkeys(ctx.limitations))
         ctx.diagnostics = list(dict.fromkeys(ctx.diagnostics))
         return ctx
@@ -588,6 +622,10 @@ class _ReadSession:
                 result = transport.call_tool(tool, arguments)
             except MCPTimeoutError as exc:
                 error = GitSourceError(GitSourceErrorKind.TIMEOUT, str(exc), operation=what)
+            except MCPConfigurationError as exc:
+                error = GitSourceError(GitSourceErrorKind.NOT_CONFIGURED, str(exc), operation=what)
+            except MCPCompatibilityError as exc:
+                error = GitSourceError(GitSourceErrorKind.INCOMPATIBLE, str(exc), operation=what)
             except MCPTransportError as exc:
                 error = GitSourceError(GitSourceErrorKind.UNAVAILABLE, str(exc), operation=what)
             else:

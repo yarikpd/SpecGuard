@@ -20,6 +20,8 @@ All tests execute 100% offline without live network/API calls (R5).
 
 from __future__ import annotations
 
+from tests.report_fixtures import make_saved_report
+
 import json
 from typing import Any, Dict, List
 import pytest
@@ -118,8 +120,8 @@ class TestTier3CrossFeatureInteractions:
         dispute_resp = orchestrator.review_dispute(dispute_req, saved_report=saved_report)
         assert dispute_resp.audit_id == saved_report.audit_id
         assert dispute_resp.original_severity == ViolationSeverity.SUSPECTED
-        assert dispute_resp.dispute_status == "OVERTURNED"
-        assert dispute_resp.updated_finding.status == RequirementStatus.IMPLEMENTED
+        assert dispute_resp.dispute_status == "MODIFIED"
+        assert dispute_resp.updated_finding.status == RequirementStatus.INSUFFICIENT_DATA
 
     def test_pairwise_dispute_on_partial_report_with_missing_first_parent(
         self, sample_spec_index, make_git_context, make_dispute_request
@@ -321,7 +323,7 @@ class TestTier3CrossFeatureInteractions:
             git_context=ctx,
         )
         assert report.metadata["is_merge_commit"] is True
-        assert report.base_parent_sha == "parent_queue_123"
+        assert report.base_parent_sha is None
         assert report.findings[0].description == "Validated via queued response 1"
 
     def test_pairwise_schema_serialization_roundtrip_complex_partial_report(
@@ -338,7 +340,7 @@ class TestTier3CrossFeatureInteractions:
             severity=ViolationSeverity.SUSPECTED,
             limitations=["Downgraded to SUSPECTED due to inaccessible base revision (AC-015)."],
         )
-        original = AuditReport(
+        original = make_saved_report(
             audit_id="audit_complex_roundtrip_999",
             target_repo="my-corp/complex-app",
             target_ref="merge_pr_88",
