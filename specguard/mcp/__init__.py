@@ -8,9 +8,12 @@ from specguard.mcp.github_client import (
     MockGitHubClient,
     parse_repo,
 )
+from specguard.mcp.stdio_transport import StdioMCPTransport, create_stdio_transport
 from specguard.mcp.transport import (
     SOURCE_LIVE,
     SOURCE_MOCK,
+    MCPCompatibilityError,
+    MCPConfigurationError,
     MCPTimeoutError,
     MCPTransport,
     MCPTransportError,
@@ -34,6 +37,10 @@ __all__ = [
     "FakeMCPTransport",
     "fake_sha",
     "MCPTransport",
+    "StdioMCPTransport",
+    "create_stdio_transport",
+    "MCPConfigurationError",
+    "MCPCompatibilityError",
     "ToolCallResult",
     "MCPTransportError",
     "MCPTimeoutError",

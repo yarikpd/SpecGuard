@@ -514,13 +514,17 @@ class TestTransportAndErrors:
 
         assert info.value.kind is GitSourceErrorKind.AUTH_FAILED
 
-    def test_live_client_without_transport_never_falls_back_to_mock(self):
+    def test_live_client_without_transport_never_falls_back_to_mock(self, monkeypatch):
+        for name in ("GITHUB_PERSONAL_ACCESS_TOKEN", "GITHUB_TOKEN", "SPECGUARD_MCP_SERVER"):
+            monkeypatch.delenv(name, raising=False)
+        monkeypatch.setenv("PATH", "")
         client = GitHubMCPClient()
 
         with pytest.raises(GitSourceError) as info:
             client.get_pr_context(REPO, 1)
 
         assert info.value.kind is GitSourceErrorKind.NOT_CONFIGURED
+        assert "GITHUB_PERSONAL_ACCESS_TOKEN" in str(info.value)
 
     @pytest.mark.parametrize("tool, args", [
         ("create_pull_request", {}),

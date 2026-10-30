@@ -23,6 +23,14 @@ class MCPTimeoutError(MCPTransportError):
     """Сервер не ответил за отведённое время."""
 
 
+class MCPConfigurationError(MCPTransportError):
+    """Сервер не запускается из-за настройки: нет файла, нет токена и т. п. Повтор не поможет."""
+
+
+class MCPCompatibilityError(MCPTransportError):
+    """Сервер работает, но его инструменты не совпадают с тем, что ждёт адаптер (NFR-003)."""
+
+
 @dataclass(frozen=True)
 class ToolCallResult:
     """Результат вызова MCP-инструмента (CallToolResult).
@@ -43,7 +51,8 @@ class MCPTransport(Protocol):
     """Минимальный контракт транспорта: вызвать инструмент и вернуть результат.
 
     Ошибки уровня GitHub API приходят как ``ToolCallResult(is_error=True)``.
-    Ошибки уровня транспорта — исключениями ``MCPTimeoutError`` /
+    Ошибки уровня транспорта — исключениями ``MCPTimeoutError``,
+    ``MCPConfigurationError``, ``MCPCompatibilityError`` и
     ``MCPTransportError``.
     """
 
