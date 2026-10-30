@@ -73,6 +73,8 @@ def create_stdio_transport(
     *,
     call_timeout: Optional[float] = None,
     environ: Optional[Mapping[str, str]] = None,
+    tools: Sequence[str] = SERVER_TOOLS,
+    expected_schemas: Mapping[str, Mapping[str, Any]] = EXPECTED_TOOL_SCHEMAS,
 ) -> "StdioMCPTransport":
     """Транспорт по настройкам: аргументы, иначе переменные окружения.
 
@@ -101,7 +103,8 @@ def create_stdio_transport(
         except ValueError:
             raise MCPConfigurationError(f"{ENV_TIMEOUT} должна быть числом секунд, получено {raw!r}") from None
     return StdioMCPTransport(
-        build_server_command(server), env=build_server_env(token, environ), call_timeout=call_timeout
+        build_server_command(server, tools), env=build_server_env(token, environ),
+        call_timeout=call_timeout, expected_schemas=expected_schemas
     )
 
 

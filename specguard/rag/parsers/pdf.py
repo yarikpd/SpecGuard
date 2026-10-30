@@ -1,13 +1,44 @@
+import logging
+import threading
 from pathlib import Path
 
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 
 
+class _FontWarningCollector(logging.Filter):
+    def __init__(self):
+        super().__init__()
+        self.thread = threading.get_ident()
+        self.count = 0
+
+    def filter(self, record):
+        if threading.get_ident() == self.thread and str(record.msg).startswith("Got invalid hex string:"):
+            self.count += 1
+            return False
+        return True
+
+
 class PdfParser:
     """Парсер PDF-документов с постраничным контролем извлечения текста."""
 
     def parse(self, path: Path) -> tuple[str, list[str]]:
+        collector = _FontWarningCollector()
+        logger = logging.getLogger("pypdf._cmap")
+        logger.addFilter(collector)
+        try:
+            text, warnings = self._parse(path)
+        finally:
+            logger.removeFilter(collector)
+        if collector.count:
+            warnings.append(
+                f"PDF {path.name}: обнаружены некорректные коды символов в таблице шрифта "
+                f"({collector.count} сообщений). Часть символов могла не извлечься; "
+                "проверьте текст ТЗ или загрузите его в TXT, Markdown либо DOCX."
+            )
+        return text, warnings
+
+    def _parse(self, path: Path) -> tuple[str, list[str]]:
         if not path.exists():
             return "", [f"Файл не найден: {path}"]
         if not path.is_file():

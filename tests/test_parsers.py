@@ -186,3 +186,26 @@ def test_spec_parser_integration(tmp_path: Path):
     assert reqs[0].req_id == "FR-001"
     assert reqs[0].section == "Основные требования"
     assert reqs[1].req_id == "REQ-002"
+
+
+def test_pdf_font_warnings_are_reported_without_console_flood(tmp_path, monkeypatch, caplog):
+    import logging
+    import specguard.rag.parsers.pdf as module
+    logger = logging.getLogger('pypdf._cmap')
+    original_filters = list(logger.filters)
+    class Page:
+        def extract_text(self):
+            for _ in range(40):
+                logger.warning("Got invalid hex string: %s", "Odd-length string")
+            return 'FR-001: Extracted requirement'
+    class Reader:
+        pages = [Page()]
+    monkeypatch.setattr(module, 'PdfReader', lambda path: Reader())
+    path = tmp_path / 'font.pdf'
+    path.touch()
+    text, warnings = module.PdfParser().parse(path)
+    assert 'FR-001' in text
+    assert len(warnings) == 1 and '40 сообщений' in warnings[0]
+    assert 'могла не извлечься' in warnings[0]
+    assert 'Got invalid hex string' not in caplog.text
+    assert logger.filters == original_filters

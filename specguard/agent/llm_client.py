@@ -309,7 +309,7 @@ class OpenAILLMClient(BaseLLMClient):
 
     def __init__(
         self,
-        base_url: str = "http://localhost:11434/v1",
+        base_url: str = "http://localhost:11434/v1/chat/completions",
         api_key: Optional[str] = None,
         model: str = "qwen2.5:7b",
         timeout: float = 60.0,
@@ -318,13 +318,8 @@ class OpenAILLMClient(BaseLLMClient):
         backoff_factor: float = 2.0,
         client: Optional[httpx.Client] = None,
     ):
-        clean_url = base_url.rstrip("/")
-        if clean_url.endswith("/chat/completions"):
-            self.endpoint = clean_url
-            self.base_url = clean_url.rsplit("/chat/completions", 1)[0]
-        else:
-            self.endpoint = f"{clean_url}/chat/completions"
-            self.base_url = clean_url
+        self.endpoint = base_url
+        self.base_url = base_url
 
         self.api_key = api_key
         self.model = model

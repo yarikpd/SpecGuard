@@ -179,15 +179,15 @@ class TestBaseLLMClient:
 class TestOpenAILLMClient:
     def test_endpoint_normalization(self):
         client1 = OpenAILLMClient(base_url="http://localhost:11434/v1")
-        assert client1.endpoint == "http://localhost:11434/v1/chat/completions"
+        assert client1.endpoint == "http://localhost:11434/v1"
         assert client1.base_url == "http://localhost:11434/v1"
 
         client2 = OpenAILLMClient(base_url="http://localhost:11434")
-        assert client2.endpoint == "http://localhost:11434/chat/completions"
+        assert client2.endpoint == "http://localhost:11434"
 
         client3 = OpenAILLMClient(base_url="https://api.openai.com/v1/chat/completions")
         assert client3.endpoint == "https://api.openai.com/v1/chat/completions"
-        assert client3.base_url == "https://api.openai.com/v1"
+        assert client3.base_url == "https://api.openai.com/v1/chat/completions"
 
     def test_headers_with_and_without_api_key(self):
         # Without key (Ollama local model default)
@@ -235,7 +235,7 @@ class TestOpenAILLMClient:
 
         assert len(captured_requests) == 1
         req = captured_requests[0]
-        assert req.url == "http://localhost:11434/v1/chat/completions"
+        assert req.url == "http://localhost:11434/v1"
         assert req.headers["Authorization"] == "Bearer sk-test"
 
         body = json.loads(req.content.decode("utf-8"))

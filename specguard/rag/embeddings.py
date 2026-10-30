@@ -68,13 +68,8 @@ class OpenAIEmbeddingClient(BaseEmbeddingClient):
         dimension: int | None = None,
         client: httpx.Client | None = None,
     ):
-        clean_url = base_url.rstrip("/")
-        if clean_url.endswith("/embeddings"):
-            self.endpoint = clean_url
-            self.base_url = clean_url.rsplit("/embeddings", 1)[0]
-        else:
-            self.endpoint = f"{clean_url}/embeddings"
-            self.base_url = clean_url
+        self.endpoint = base_url
+        self.base_url = base_url
 
         self.model_name = model_name
         self.api_key = api_key

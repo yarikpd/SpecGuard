@@ -85,11 +85,11 @@ class TestMockEmbeddingClient:
 class TestOpenAIEmbeddingClient:
     def test_endpoint_construction(self):
         c1 = OpenAIEmbeddingClient(base_url="http://localhost:11434/v1", model_name="qwen3-emb")
-        assert c1.endpoint == "http://localhost:11434/v1/embeddings"
+        assert c1.endpoint == "http://localhost:11434/v1"
         c1.close()
 
         c2 = OpenAIEmbeddingClient(base_url="http://localhost:11434/v1/", model_name="qwen3-emb")
-        assert c2.endpoint == "http://localhost:11434/v1/embeddings"
+        assert c2.endpoint == "http://localhost:11434/v1/"
         c2.close()
 
         c3 = OpenAIEmbeddingClient(base_url="https://api.openai.com/v1/embeddings", model_name="text-embedding-3-small")
@@ -113,7 +113,7 @@ class TestOpenAIEmbeddingClient:
 
     def test_embed_text_and_l2_normalization(self):
         def handler(request: httpx.Request) -> httpx.Response:
-            assert request.url == "http://localhost:11434/v1/embeddings"
+            assert request.url == "http://localhost:11434/v1"
             body = httpx.Response(200, json={
                 "object": "list",
                 "data": [
