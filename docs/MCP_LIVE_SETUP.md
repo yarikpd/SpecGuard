@@ -60,3 +60,5 @@ python -m pytest tests/unit/test_stdio_transport.py -k real_server -v
 ```
 
 Тест запускает настоящий сервер с фиктивным токеном, проверяет рукопожатие и инструменты и не делает запросов к GitHub.
+
+Следующий шаг — живая проверка на GitHub: [MCP_LIVE_CHECK.md](MCP_LIVE_CHECK.md).
