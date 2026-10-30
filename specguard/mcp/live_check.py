@@ -45,7 +45,10 @@ MARK = {PASS: "✓", FAIL: "✗", SKIP: "—", INFO: "i"}
 GIT_STATUS = {"A": "added", "M": "modified", "D": "removed", "R": "renamed", "C": "copied", "T": "changed"}
 EXPECTED_KEYS = ("expected_head_sha", "expected_base_sha", "expected_first_parent_sha", "expected_parent_shas")
 DEFAULT_OUT = Path.home() / "specguard-live-protocols"
-_PR_RE = re.compile(r"^(?:(?:refs/)?pull/|pr\s*#?|#)?(\d+)(?:/head|/merge)?$", re.IGNORECASE)
+_PR_RE = re.compile(
+    r"^(?:(?:refs/)?pull/|pr\s*#?|#)?(\d+)(?:/head|/merge)?$",
+    re.IGNORECASE,
+)
 
 Change = Tuple[str, Optional[str], str]  # (статус GitHub, прежний путь, путь)
 
@@ -101,27 +104,65 @@ class TargetResult:
     error: Optional[str] = None
 
 
+
 def load_targets(path: str) -> List[Target]:
-    """Цели из JSON: список объектов с target_repo и target_ref (или {"targets": [...]})."""
+    """Загружает цели из JSON в форматах target_repo/target_ref или repo/ref."""
     data = json.loads(Path(path).read_text(encoding="utf-8"))
+
     items = data.get("targets") if isinstance(data, dict) else data
+
+    if not isinstance(items, list):
+        raise ValueError(
+            "Неверный формат файла целей: ожидался список объектов "
+            "или объект с полем 'targets'."
+        )
+
     targets: List[Target] = []
     seen: Set[Tuple[str, str]] = set()
-    for item in items or []:
-        if not isinstance(item, dict) or not item.get("target_repo") or not item.get("target_ref"):
+
+    for item in items:
+        if not isinstance(item, dict):
             continue
-        key = (str(item["target_repo"]).lower(), str(item["target_ref"]).strip())
+
+        # Поддерживаем оба формата JSON.
+        repo = item.get("target_repo") or item.get("repo")
+        ref = item.get("target_ref") or item.get("ref")
+
+        if not repo or not ref:
+            continue
+
+        repo = str(repo).strip()
+        ref = str(ref).strip()
+
+        if not repo or not ref:
+            continue
+
+        key = (repo.lower(), ref)
+
         if key in seen:
             continue
+
         seen.add(key)
-        targets.append(Target(
-            repo=str(item["target_repo"]), ref=str(item["target_ref"]).strip(),
-            scenario_id=str(item.get("scenario_id", "")), title=str(item.get("title", "")),
-            kind=str(item.get("kind", "")),
-            expected={k: item[k] for k in EXPECTED_KEYS if item.get(k)},
-            base_branch=item.get("base_branch"), head_branch=item.get("head_branch"),
-        ))
+
+        targets.append(
+            Target(
+                repo=repo,
+                ref=ref,
+                scenario_id=str(item.get("scenario_id", "")),
+                title=str(item.get("title", "")),
+                kind=str(item.get("kind", "")),
+                expected={
+                    key: item[key]
+                    for key in EXPECTED_KEYS
+                    if item.get(key)
+                },
+                base_branch=item.get("base_branch"),
+                head_branch=item.get("head_branch"),
+            )
+        )
+
     return targets
+
 
 
 # ------------------------------------------------------------- локальный git
