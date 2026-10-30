@@ -24,9 +24,11 @@ Read-only адаптер к GitHub MCP Server (MCP_INTEGRATION.md): разреш
 - ``get_commit`` → MinimalCommit БЕЗ родителей и без previous_filename;
   файлы постранично (perPage по умолчанию 30), stats — по всему коммиту.
 
-Требует живой проверки (AC-014): разрешает ли GitHub ссылку ``<sha>^N``
-через get_commit и строится ли список файлов merge-коммита относительно
-первого родителя.
+Подтверждено живой проверкой на GitHub 30.10.2026 (github-mcp-server 2.0.3,
+docs/protocols/mcp-live-20261030-094914.md, AC-014): get_commit разрешает
+ссылки ``<sha>^N``, список файлов merge-коммита строится относительно первого
+родителя, список файлов PR — относительно merge-base. При смене версии
+сервера проверку стоит повторить (docs/MCP_LIVE_CHECK.md).
 """
 
 import json
@@ -152,8 +154,9 @@ class GitHubMCPClient(BaseGitClient):
         consistency_retries: сколько раз перечитать файлы PR, если head
             изменился во время чтения.
         resolve_parents: определять родителей коммита запросами ``<sha>^N``.
-        merge_diff_semantics_verified: включить после живой проверки того,
-            что GitHub строит список файлов merge-коммита от первого родителя.
+        merge_diff_semantics_verified: GitHub строит список файлов
+            merge-коммита от первого родителя — подтверждено живой проверкой.
+            ``False`` возвращает в отчёт оговорку, что это не проверено.
     """
 
     def __init__(
@@ -166,7 +169,7 @@ class GitHubMCPClient(BaseGitClient):
         retry_delays: Sequence[float] = (1.0, 3.0),
         consistency_retries: int = 1,
         resolve_parents: bool = True,
-        merge_diff_semantics_verified: bool = False,
+        merge_diff_semantics_verified: bool = True,
         sleep: Callable[[float], None] = time.sleep,
     ):
         # Токен хранится только здесь и не попадает в GitContext.
@@ -426,7 +429,7 @@ class GitHubMCPClient(BaseGitClient):
     ) -> Tuple[Optional[List[str]], List[str]]:
         """Родители через ``get_commit(sha="<sha>^N")``: get_commit их не возвращает.
 
-        None означает «неизвестны». Синтаксис ``^N`` требует живой проверки.
+        None означает «неизвестны». Синтаксис ``^N`` подтверждён живой проверкой.
         """
         if not self.resolve_parents:
             return None, [f"Определение родителей отключено. {PARENTS_UNKNOWN_NOTE}"]

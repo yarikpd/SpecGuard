@@ -78,6 +78,59 @@ def _extract_requirement_ids(text: str) -> List[str]:
     return [m.upper() for m in pattern.findall(text)]
 
 
+def _evidence_is_grounded(ev: Evidence, req: SpecRequirement, ctx: GitContext) -> bool:
+    """Verify provenance and literal quotes against the exact supplied source material."""
+    if not ev.code_quote or not ev.spec_quote or ev.line_start is None or ev.line_end is None:
+        return False
+    if ev.line_start < 1 or ev.line_end < ev.line_start:
+        return False
+    if ev.spec_quote not in (req.raw_text or req.description):
+        return False
+    for f in ctx.files:
+        if ev.file_path not in (f.filename, f.old_path, f.new_path) or not f.patch:
+            continue
+        old = new = None
+        matched = []
+        matched_lines = []
+        for line in f.patch.splitlines():
+            hunk = re.match(r"@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@", line)
+            if hunk:
+                old, new = map(int, hunk.groups())
+                continue
+            if old is None or not line or line[0] not in " +-":
+                continue
+            prefix, content = line[0], line[1:]
+            if prefix != "-" and ev.revision == ctx.head_sha and ev.line_start <= new <= ev.line_end:
+                matched.append(content)
+                matched_lines.append(new)
+            if prefix != "+" and ctx.base_sha and ev.revision == ctx.base_sha and ev.line_start <= old <= ev.line_end:
+                matched.append(content)
+                matched_lines.append(old)
+            if prefix != "+": old += 1
+            if prefix != "-": new += 1
+        quote = "\n".join(line[1:] if line.startswith(("+", "-")) else line for line in ev.code_quote.splitlines())
+        if matched and matched_lines[0] == ev.line_start and matched_lines[-1] == ev.line_end and quote in "\n".join(matched):
+            return True
+    return False
+
+
+def _validate_finding(finding: Finding, req: SpecRequirement, ctx: GitContext) -> Finding:
+    valid = [e for e in finding.evidence if _evidence_is_grounded(e, req, ctx)]
+    counter = [e for e in finding.counter_evidence if _evidence_is_grounded(e, req, ctx)]
+    invalid = len(valid) != len(finding.evidence) or len(counter) != len(finding.counter_evidence)
+    unsupported = finding.status in (RequirementStatus.IMPLEMENTED, RequirementStatus.VIOLATED) and not valid
+    if invalid or unsupported:
+        finding = finding.model_copy(deep=True)
+        finding.evidence, finding.counter_evidence = valid, counter
+        finding.limitations.append("Evidence could not be verified against the supplied specification and diff.")
+        if unsupported and finding.status == RequirementStatus.IMPLEMENTED:
+            finding.status = RequirementStatus.INSUFFICIENT_DATA
+            finding.severity = None
+        elif finding.status == RequirementStatus.VIOLATED:
+            finding.severity = ViolationSeverity.SUSPECTED
+    return finding
+
+
 class SpecGuardOrchestrator:
     """Главный оркестратор аудита соответствия PR и коммитов техническому заданию."""
 
@@ -182,7 +235,7 @@ class SpecGuardOrchestrator:
 
         # 2. First-parent lineage resolution (AC-014, TEST-002)
         if git_ctx.is_merge_commit:
-            base_parent_sha = git_ctx.first_parent_sha or git_ctx.base_sha
+            base_parent_sha = git_ctx.first_parent_sha if git_ctx.first_parent_sha == git_ctx.base_sha else None
         else:
             base_parent_sha = git_ctx.base_sha or git_ctx.first_parent_sha
 
@@ -209,6 +262,11 @@ class SpecGuardOrchestrator:
         )
         is_partial = bool(git_ctx.is_partial or is_partial_integrity)
         current_limitations.extend(git_ctx.limitations)
+        source_warnings = list(getattr(self.spec_index, "source_warnings", []))
+        if source_warnings:
+            is_partial = True
+            current_limitations.extend(source_warnings)
+            current_missing_data.append("spec_extraction")
         current_limitations.extend(integrity_limits)
         current_missing_data.extend(integrity_missing)
 
@@ -278,6 +336,11 @@ class SpecGuardOrchestrator:
                 language=effective_language,
             )
 
+        if any("Evidence could not be verified" in lim for f in findings for lim in f.limitations):
+            is_partial = True
+            current_limitations.append("Some model evidence could not be verified against the supplied materials.")
+            current_missing_data.append("verified_evidence")
+
         return AuditReport(
             audit_id=final_audit_id,
             timestamp=timestamp,
@@ -290,6 +353,9 @@ class SpecGuardOrchestrator:
             limitations=_dedup_list(current_limitations),
             missing_data=_dedup_list(current_missing_data),
             is_partial=is_partial,
+            spec_snapshot_id=getattr(self.spec_index, "snapshot_id", None),
+            saved_requirements=[r.model_copy(deep=True) for r in candidate_reqs],
+            saved_git_context=git_ctx.model_copy(deep=True),
             metadata={
                 "head_sha": git_ctx.head_sha,
                 "is_merge_commit": git_ctx.is_merge_commit,
@@ -337,6 +403,10 @@ class SpecGuardOrchestrator:
                     update={"req_id": req.req_id, "title": req.title or finding.title}
                 )
 
+            if finding.req_id != req.req_id:
+                finding = finding.model_copy(update={"req_id": req.req_id})
+                finding.limitations.append("Model returned a different requirement ID; anchored to the evaluated requirement.")
+
             # AC-015 downgrade: Inaccessible base revision downgrades CONFIRMED to SUSPECTED
             if base_parent_sha is None and finding.status == RequirementStatus.VIOLATED:
                 if finding.severity == ViolationSeverity.CONFIRMED:
@@ -351,6 +421,10 @@ class SpecGuardOrchestrator:
                         }
                     )
 
+            finding = _validate_finding(finding, req, git_ctx)
+            if base_parent_sha is None and finding.status == RequirementStatus.IMPLEMENTED:
+                finding.status = RequirementStatus.INSUFFICIENT_DATA
+                finding.limitations.append("Implementation cannot be attributed to this change without a verified base revision.")
             findings.append(finding)
 
         return findings
@@ -383,30 +457,13 @@ class SpecGuardOrchestrator:
             language or saved_report.language or self.language or "ru"
         )
 
-        # 2. Spec requirement resolution (Hermetic fallback per AC-008, FR-012)
-        active_index = spec_index if spec_index is not None else self.spec_index
-        requirement: Optional[SpecRequirement] = None
-        if active_index is not None:
-            requirement = active_index.get_by_id(target_req_id)
-
-        if requirement is None:
-            spec_quote = next((ev.spec_quote for ev in finding.evidence if ev.spec_quote), "")
-            requirement = SpecRequirement(
-                req_id=finding.req_id,
-                title=finding.title,
-                description=finding.description or f"Requirement {finding.req_id}",
-                raw_text=spec_quote,
-            )
-
-        # 3. Code context reconstruction from saved finding evidence
-        diff_snippets: List[str] = []
-        for ev in finding.evidence + finding.counter_evidence:
-            if ev.code_quote:
-                lines_info = f"Lines {ev.line_start}-{ev.line_end}" if ev.line_start else "N/A"
-                diff_snippets.append(
-                    f"--- {ev.file_path} ({lines_info}, Rev: {ev.revision})\n{ev.code_quote}"
-                )
-        diff_context = "\n\n".join(diff_snippets)
+        # Only materials embedded in the original report are authoritative.
+        requirement = next((r for r in saved_report.saved_requirements
+                            if r.req_id.upper() == target_req_id.upper()), None)
+        saved_context = saved_report.saved_git_context
+        if requirement is None or saved_context is None:
+            raise ValueError("Original audit materials are unavailable; dispute cannot be reviewed reliably")
+        diff_context = format_git_context_diff(saved_context)
 
         # 4. Prompt injection check on dispute user comment (NFR-002, AC-009)
         comment_inj = detect_prompt_injection(dispute.user_comment)
@@ -442,11 +499,21 @@ class SpecGuardOrchestrator:
                 "title": finding.title or dispute_response.updated_finding.title,
             }
         )
-        dispute_response.updated_finding = updated_finding
+        dispute_response.updated_finding = _validate_finding(updated_finding, requirement, saved_context)
+        if (dispute_response.dispute_status.upper() == "OVERTURNED"
+                and (not dispute_response.updated_finding.evidence or not saved_report.base_parent_sha)):
+            dispute_response.updated_finding.status = RequirementStatus.INSUFFICIENT_DATA
+            dispute_response.updated_finding.severity = None
+            dispute_response.updated_finding.limitations.append(
+                "Overturn requires verified evidence and a verified base revision."
+            )
+        if dispute_response.updated_finding.status == RequirementStatus.INSUFFICIENT_DATA:
+            dispute_response.dispute_status = "MODIFIED"
+            dispute_response.reasoning = "Dispute could not be resolved: verified evidence or a verified base revision is missing from the original audit materials."
 
         # 7. Prevent injection-driven overturn and tag limitation (NFR-002, AC-009)
         if has_injection:
-            if dispute_response.dispute_status.upper() == "OVERTURNED" or dispute_response.updated_finding.status in (
+            if dispute_response.dispute_status.upper() in ("OVERTURNED", "MODIFIED") or dispute_response.updated_finding.status in (
                 RequirementStatus.IMPLEMENTED,
                 RequirementStatus.NOT_AFFECTED,
             ):

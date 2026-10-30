@@ -21,6 +21,7 @@ class RequirementStatus(str, Enum):
     IMPLEMENTED = "IMPLEMENTED"
     VIOLATED = "VIOLATED"
     NOT_AFFECTED = "NOT_AFFECTED"
+    INSUFFICIENT_DATA = "INSUFFICIENT_DATA"
 
 
 class DisputeStatus(str, Enum):
@@ -118,6 +119,9 @@ class AuditReport(BaseModel):
     missing_data: List[str] = Field(default_factory=list)
     is_partial: bool = False
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    spec_snapshot_id: Optional[str] = None
+    saved_requirements: List[SpecRequirement] = Field(default_factory=list)
+    saved_git_context: Optional[GitContext] = None
 
 
 class DisputeRequest(BaseModel):

@@ -91,6 +91,7 @@ class TestEnums:
             RequirementStatus.IMPLEMENTED,
             RequirementStatus.VIOLATED,
             RequirementStatus.NOT_AFFECTED,
+            RequirementStatus.INSUFFICIENT_DATA,
         }
 
     def test_requirement_status_from_string(self):
